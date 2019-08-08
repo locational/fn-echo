@@ -1,59 +1,29 @@
-FROM node:8.9.1-alpine
+FROM alpine:3.8
 
-RUN addgroup -S app && adduser app -S -G app
+RUN mkdir -p /home/app
+
 RUN apk --no-cache add curl \
     && echo "Pulling watchdog binary from Github." \
     && curl -sSL https://github.com/openfaas/faas/releases/download/0.9.14/fwatchdog > /usr/bin/fwatchdog \
     && chmod +x /usr/bin/fwatchdog \
+    && cp /usr/bin/fwatchdog /home/app \
     && apk del curl --no-cache
-# COPY fwatchdog /usr/bin
-RUN chmod +x /usr/bin/fwatchdog
+    
+# Add non root user
+RUN addgroup -S app && adduser app -S -G app
 
-WORKDIR /root/
+RUN chown app /home/app
 
-# Turn down the verbosity to default level.
-ENV NPM_CONFIG_LOGLEVEL warn
-
-RUN mkdir -p /home/app
-
-# Wrapper/boot-strapper
 WORKDIR /home/app
-COPY package.json ./
-
-# This ordering means the npm installation is cached for the outer function handler.
-RUN npm i --production
-
-# Copy outer function handler
-COPY index.js ./
-
-# COPY function node packages and install, adding this as a separate
-# entry allows caching of npm install runtime dependencies
-WORKDIR /home/app/function
-RUN npm i --production || :
-
-# Copy in additional function files and folders
-COPY --chown=app:app function/ .
-
-WORKDIR /home/app/
-
-# chmod for tmp is for a buildkit issue (@alexellis)
-RUN chmod +rx -R ./function \
-    && chown app:app -R /home/app \
-    && chmod 777 /tmp
 
 USER app
-
-ENV cgi_headers="true"
-ENV fprocess="node index.js"
-
-ENV combine_output='false'
-ENV write_debug="true"
-ENV write_timeout=100
-ENV read_timeout=100
-ENV exec_timeout=100
+COPY ./echo.sh ./echo.sh
+# Populate example here - i.e. "cat", "sha512sum" or "node index.js"
+ENV fprocess="./echo.sh"
+# Set to true to see request in function logs
+ENV write_debug="false"
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=3s CMD [ -e /tmp/.lock ] || exit 1
-
-CMD ["fwatchdog"]
+CMD [ "fwatchdog" ]
